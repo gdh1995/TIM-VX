@@ -81,17 +81,46 @@ static vsi_bool setup_op_shapes
         inputs[BI_LSTM_FW_INPUT_H_STATE] = output_tensor->t;
     }
 
+    if( !inputs[BI_LSTM_FW_INPUT_C_STATE] )
+    {
+        attr.dim_num = 2;
+        attr.size[1] = batch_size;
+        attr.size[0] = num_units;
+        attr.dtype.qnt_type = VSI_NN_QNT_TYPE_NONE;
+        attr.dtype.vx_type = VSI_NN_TYPE_FLOAT16;
+        attr.vtl = FALSE;
+        attr.is_const = TRUE;
+
+        output_tensor = vsi_nn_internal_new_tensor( self, &attr, 0.0f );
+        inputs[BI_LSTM_FW_INPUT_C_STATE] = output_tensor->t;
+    }
+
     if( !inputs[BI_LSTM_BW_INPUT_H_STATE] )
     {
         attr.dim_num = 2;
         attr.size[1] = batch_size;
         attr.size[0] = output_size;
-        memcpy(&attr.dtype, &outputs[BI_LSTM_BW_OUTPUT_OUTPUT]->attr.dtype, sizeof( attr.dtype ));
+        int output_index = curr_param->merge_outputs ? BI_LSTM_FW_OUTPUT_OUTPUT : BI_LSTM_BW_OUTPUT_OUTPUT;
+        memcpy(&attr.dtype, &outputs[output_index]->attr.dtype, sizeof( attr.dtype ));
         attr.vtl = FALSE;
         attr.is_const = TRUE;
 
         output_tensor = vsi_nn_internal_new_tensor( self, &attr, 0.0f );
         inputs[BI_LSTM_BW_INPUT_H_STATE] = output_tensor->t;
+    }
+
+    if( !inputs[BI_LSTM_BW_INPUT_C_STATE] )
+    {
+        attr.dim_num = 2;
+        attr.size[1] = batch_size;
+        attr.size[0] = num_units;
+        attr.dtype.qnt_type = VSI_NN_QNT_TYPE_NONE;
+        attr.dtype.vx_type = VSI_NN_TYPE_FLOAT16;
+        attr.vtl = FALSE;
+        attr.is_const = TRUE;
+
+        output_tensor = vsi_nn_internal_new_tensor( self, &attr, 0.0f );
+        inputs[BI_LSTM_BW_INPUT_C_STATE] = output_tensor->t;
     }
 
     /* output */
@@ -301,7 +330,7 @@ static vsi_bool op_setup
 
         /* lstmcell output c_state */
         vsi_nn_internal_init_tensor_attr(&attr,
-            &outputs[BI_LSTM_FW_OUTPUT_OUTPUT]->attr.dtype, use_virtual_tensor);
+            &inputs[BI_LSTM_FW_INPUT_C_STATE]->attr.dtype, use_virtual_tensor);
         output_tensor = vsi_nn_internal_new_tensor( self, &attr, 0.0f );
         lstmcell_out2 = output_tensor->t;
 
@@ -311,7 +340,7 @@ static vsi_bool op_setup
         curr->node->nn_param.lstmunit_ovxlib.forget_bias = curr_param->forget_bias;
         curr->node->nn_param.lstmunit_ovxlib.proj_clip = curr_param->proj_clip;
         curr->node->nn_param.lstmunit_ovxlib.recurrent_activation = curr_param->recurrent_activation;
-        memcpy( curr->node->nn_param.lstm_ovxlib.internal_dtype,
+        memcpy( curr->node->nn_param.lstmunit_ovxlib.internal_dtype,
             curr_param->internal_dtype,
             sizeof(vsi_nn_dtype_t) * LSTMUNIT_QUANTIZE_PARAM_COUNT);
         curr->inputs[LSTMUNIT_INPUT_INPUT] = reshape_output_tensors[i];
@@ -401,7 +430,7 @@ static vsi_bool op_setup
 
         /* lstmcell output c_state */
         vsi_nn_internal_init_tensor_attr(&attr,
-            &outputs[BI_LSTM_FW_OUTPUT_OUTPUT]->attr.dtype, use_virtual_tensor);
+            &inputs[BI_LSTM_BW_INPUT_C_STATE]->attr.dtype, use_virtual_tensor);
         output_tensor = vsi_nn_internal_new_tensor( self, &attr, 0.0f );
         lstmcell_out2 = output_tensor->t;
 
@@ -411,7 +440,7 @@ static vsi_bool op_setup
         curr->node->nn_param.lstmunit_ovxlib.forget_bias = curr_param->forget_bias;
         curr->node->nn_param.lstmunit_ovxlib.proj_clip = curr_param->proj_clip;
         curr->node->nn_param.lstmunit_ovxlib.recurrent_activation = curr_param->recurrent_activation;
-        memcpy( curr->node->nn_param.lstm_ovxlib.internal_dtype,
+        memcpy( curr->node->nn_param.lstmunit_ovxlib.internal_dtype,
             &(curr_param->internal_dtype[LSTMUNIT_QUANTIZE_PARAM_COUNT]),
             sizeof(vsi_nn_dtype_t) * LSTMUNIT_QUANTIZE_PARAM_COUNT);
         curr->inputs[LSTMUNIT_INPUT_INPUT] = reshape_output_tensors[time_step - 1 - i];
@@ -473,7 +502,7 @@ static vsi_bool op_setup
         /* reshape output to 3-dims */
         output_tensor = vsi_nn_rnn_reshape_cell_output(self,
             lstmcell_out0, (uint32_t)batch_size, use_virtual_tensor);
-        lstmcell_reshape_output_tensors_bw[i] = output_tensor->t;
+        lstmcell_reshape_output_tensors_bw[time_step - 1 - i] = output_tensor->t;
     }
 
     if(curr_param->merge_outputs)
